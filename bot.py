@@ -130,7 +130,6 @@ hard_q = [
     {"q": "If you could change one thing about the world, what would it be?", "ru": "Если бы ты мог изменить одну вещь в мире, что бы это было?"},
 ]
 
-# ==================== ПРЕДЛОЖЕНИЯ ДЛЯ ПЕРЕВОДА ====================
 translate_sentences = [
     {"en": "Hello, how are you?", "ru": ["привет как дела", "здравствуй как ты", "привет как ты"]},
     {"en": "I like to read books in the evening.", "ru": ["я люблю читать книги вечером", "мне нравится читать книги по вечерам"]},
@@ -190,7 +189,6 @@ def check_meaning(answer, keywords):
         return True, matched
     return False, matched
 
-# ==================== СОСТОЯНИЯ ====================
 user_state = {}
 
 def send_message(chat_id, text, reply_markup=None):
@@ -215,9 +213,16 @@ def get_main_keyboard():
         "resize_keyboard": True
     }
 
-# ==================== ОБРАБОТКА ====================
+# ==================== ОБРАБОТКА (С ИСПРАВЛЕНИЕМ ДВОЙНЫХ СООБЩЕНИЙ) ====================
 def process_message(chat_id, user_id, text):
     try:
+        # Проверяем, что это не ответ на игру или тест
+        is_in_game = False
+        if user_id in user_state:
+            mode = user_state[user_id].get("mode")
+            if mode in ["word_game", "translate_game", "test"]:
+                is_in_game = True
+        
         # Обработка команд через /
         if text == "/start":
             user_state[user_id] = {"mode": "normal", "question_count": 1}
@@ -228,8 +233,9 @@ def process_message(chat_id, user_id, text):
                 f"Выбери режим кнопками:\n\n"
                 f"*Вопрос 1:*\n{t['q']}\n\n_(перевод: {t['ru']})_",
                 reply_markup=get_main_keyboard())
+            return
         
-        elif text == "/profile" or text == "👤 Профиль":
+        if text == "/profile":
             profiles, profile = get_profile(user_id)
             xp = profile["xp"]
             lvl, lvl_name = get_level(xp)
@@ -244,101 +250,124 @@ def process_message(chat_id, user_id, text):
                 f"✅ Правильно: {correct}\n"
                 f"❌ Неправильно: {wrong}\n"
                 f"🎯 Точность: {accuracy}%")
+            return
         
-        # Кнопки
-        elif text == "🇬🇧 Обычный":
-            user_state[user_id] = {"mode": "normal", "question_count": 1}
-            t = random.choice(topics)
-            user_state[user_id]["current_topic"] = t
-            send_message(chat_id, f"*Вопрос 1:*\n{t['q']}\n\n_(перевод: {t['ru']})_")
-        
-        elif text == "🔰 Простой":
-            user_state[user_id] = {"mode": "easy", "question_count": 1}
-            q = random.choice(easy_q)
-            user_state[user_id]["current_question"] = q
-            send_message(chat_id, f"🔰 *Простой режим*\n\n{q['q']}\n\n_(перевод: {q['ru']})_")
-        
-        elif text == "🔥 Сложный":
-            user_state[user_id] = {"mode": "hard", "question_count": 1}
-            q = random.choice(hard_q)
-            user_state[user_id]["current_question"] = q
-            send_message(chat_id, f"🔥 *Сложный режим*\n\n{q['q']}\n\n_(перевод: {q['ru']})_")
-        
-        elif text == "🎮 Игра слов":
-            words = random.sample(all_words, min(10, len(all_words)))
-            user_state[user_id] = {"mode": "word_game", "words": words, "idx": 0, "score": 0, "dir": random.choice([0,1])}
-            w = words[0]
-            if user_state[user_id]["dir"] == 0:
-                send_message(chat_id, f"🎮 *Игра слов* (+10XP/-5XP)\n\n1/10: 🇷🇺 {w['ru']} → ?")
-            else:
-                send_message(chat_id, f"🎮 *Игра слов* (+10XP/-5XP)\n\n1/10: 🇬🇧 {w['en']} → ?")
-        
-        elif text == "📖 Игра перевод":
-            sents = random.sample(translate_sentences, min(5, len(translate_sentences)))
-            user_state[user_id] = {"mode": "translate_game", "sents": sents, "idx": 0, "score": 0}
-            s = sents[0]
-            send_message(chat_id, f"📖 *Игра перевод* (+15XP/-5XP)\n\n1/5: 🇬🇧 {s['en']}\n\n✏️ Напиши перевод:")
-        
-        elif text == "📝 Тест слов":
-            words = random.sample(all_words, min(10, len(all_words)))
-            user_state[user_id] = {"mode": "test", "words": words, "idx": 0, "score": 0, "dir": random.choice([0,1])}
-            w = words[0]
-            if user_state[user_id]["dir"] == 0:
-                send_message(chat_id, f"📝 *Тест слов*\n\n1/10: 🇷🇺 {w['ru']} → ?")
-            else:
-                send_message(chat_id, f"📝 *Тест слов*\n\n1/10: 🇬🇧 {w['en']} → ?")
-        
-        elif text == "📚 Справочник":
-            send_message(chat_id,
-                "📚 *СПРАВОЧНИК*\n\n"
-                "*Режимы:*\n"
-                "🇬🇧 Обычный - 50+ тем, проверка смысла/грамматики\n"
-                "🔰 Простой - лёгкие вопросы\n"
-                "🔥 Сложный - глубокие вопросы\n"
-                "🎮 Игра слов - перевод слов (+10XP/-5XP)\n"
-                "📖 Игра перевод - перевод предложений (+15XP/-5XP)\n"
-                "📝 Тест слов - быстрый тест\n\n"
-                "*Команды:* /start, /profile")
-        
-        elif text == "🔄 Следующий":
-            if user_id not in user_state:
-                send_message(chat_id, "Сначала выбери режим кнопкой")
-                return
-            mode = user_state[user_id].get("mode")
-            if "question_count" not in user_state[user_id]:
-                user_state[user_id]["question_count"] = 1
-            user_state[user_id]["question_count"] += 1
-            count = user_state[user_id]["question_count"]
-            if mode == "normal":
+        # Кнопки (только если не в игре)
+        if not is_in_game:
+            if text == "🇬🇧 Обычный":
+                user_state[user_id] = {"mode": "normal", "question_count": 1}
                 t = random.choice(topics)
                 user_state[user_id]["current_topic"] = t
-                send_message(chat_id, f"*Вопрос {count}:*\n{t['q']}\n\n_(перевод: {t['ru']})_")
-            elif mode == "easy":
+                send_message(chat_id, f"*Вопрос 1:*\n{t['q']}\n\n_(перевод: {t['ru']})_")
+                return
+            
+            if text == "🔰 Простой":
+                user_state[user_id] = {"mode": "easy", "question_count": 1}
                 q = random.choice(easy_q)
                 user_state[user_id]["current_question"] = q
-                send_message(chat_id, f"🔰 *Вопрос {count}:*\n{q['q']}\n\n_(перевод: {q['ru']})_")
-            elif mode == "hard":
+                send_message(chat_id, f"🔰 *Простой режим*\n\n{q['q']}\n\n_(перевод: {q['ru']})_")
+                return
+            
+            if text == "🔥 Сложный":
+                user_state[user_id] = {"mode": "hard", "question_count": 1}
                 q = random.choice(hard_q)
                 user_state[user_id]["current_question"] = q
-                send_message(chat_id, f"🔥 *Вопрос {count}:*\n{q['q']}\n\n_(перевод: {q['ru']})_")
-            else:
-                send_message(chat_id, "Сначала выбери режим: Обычный, Простой или Сложный")
+                send_message(chat_id, f"🔥 *Сложный режим*\n\n{q['q']}\n\n_(перевод: {q['ru']})_")
+                return
+            
+            if text == "🎮 Игра слов":
+                words = random.sample(all_words, min(10, len(all_words)))
+                user_state[user_id] = {"mode": "word_game", "words": words, "idx": 0, "score": 0, "dir": random.choice([0,1])}
+                w = words[0]
+                if user_state[user_id]["dir"] == 0:
+                    send_message(chat_id, f"🎮 *Игра слов* (+10XP/-5XP)\n\n1/10: 🇷🇺 {w['ru']} → ?")
+                else:
+                    send_message(chat_id, f"🎮 *Игра слов* (+10XP/-5XP)\n\n1/10: 🇬🇧 {w['en']} → ?")
+                return
+            
+            if text == "📖 Игра перевод":
+                sents = random.sample(translate_sentences, min(5, len(translate_sentences)))
+                user_state[user_id] = {"mode": "translate_game", "sents": sents, "idx": 0, "score": 0}
+                s = sents[0]
+                send_message(chat_id, f"📖 *Игра перевод* (+15XP/-5XP)\n\n1/5: 🇬🇧 {s['en']}\n\n✏️ Напиши перевод:")
+                return
+            
+            if text == "📝 Тест слов":
+                words = random.sample(all_words, min(10, len(all_words)))
+                user_state[user_id] = {"mode": "test", "words": words, "idx": 0, "score": 0, "dir": random.choice([0,1])}
+                w = words[0]
+                if user_state[user_id]["dir"] == 0:
+                    send_message(chat_id, f"📝 *Тест слов*\n\n1/10: 🇷🇺 {w['ru']} → ?")
+                else:
+                    send_message(chat_id, f"📝 *Тест слов*\n\n1/10: 🇬🇧 {w['en']} → ?")
+                return
+            
+            if text == "👤 Профиль":
+                profiles, profile = get_profile(user_id)
+                xp = profile["xp"]
+                lvl, lvl_name = get_level(xp)
+                correct = profile["correct"]
+                wrong = profile["wrong"]
+                total = correct + wrong
+                accuracy = int(correct/total*100) if total > 0 else 0
+                send_message(chat_id, f"👤 *ПРОФИЛЬ*\n\n🏆 {lvl_name} (ур. {lvl})\n⭐ Опыт: {xp}\n✅ Правильно: {correct}\n❌ Неправильно: {wrong}\n🎯 Точность: {accuracy}%")
+                return
+            
+            if text == "📚 Справочник":
+                send_message(chat_id,
+                    "📚 *СПРАВОЧНИК*\n\n"
+                    "*Режимы:*\n"
+                    "🇬🇧 Обычный - 50+ тем\n"
+                    "🔰 Простой - лёгкие вопросы\n"
+                    "🔥 Сложный - глубокие вопросы\n"
+                    "🎮 Игра слов - перевод слов (+10XP/-5XP)\n"
+                    "📖 Игра перевод - перевод предложений (+15XP/-5XP)\n"
+                    "📝 Тест слов - быстрый тест\n\n"
+                    "*Команды:* /start, /profile")
+                return
+            
+            if text == "🔄 Следующий":
+                if user_id not in user_state:
+                    send_message(chat_id, "Сначала выбери режим кнопкой")
+                    return
+                mode = user_state[user_id].get("mode")
+                if mode not in ["normal", "easy", "hard"]:
+                    send_message(chat_id, "Сначала выбери режим: Обычный, Простой или Сложный")
+                    return
+                if "question_count" not in user_state[user_id]:
+                    user_state[user_id]["question_count"] = 1
+                user_state[user_id]["question_count"] += 1
+                count = user_state[user_id]["question_count"]
+                if mode == "normal":
+                    t = random.choice(topics)
+                    user_state[user_id]["current_topic"] = t
+                    send_message(chat_id, f"*Вопрос {count}:*\n{t['q']}\n\n_(перевод: {t['ru']})_")
+                elif mode == "easy":
+                    q = random.choice(easy_q)
+                    user_state[user_id]["current_question"] = q
+                    send_message(chat_id, f"🔰 *Вопрос {count}:*\n{q['q']}\n\n_(перевод: {q['ru']})_")
+                elif mode == "hard":
+                    q = random.choice(hard_q)
+                    user_state[user_id]["current_question"] = q
+                    send_message(chat_id, f"🔥 *Вопрос {count}:*\n{q['q']}\n\n_(перевод: {q['ru']})_")
+                return
+            
+            if text == "ℹ️ Инфо":
+                levels_text = "\n".join([f"{l['level']}. {l['name']} - {l['xp']} XP" for l in LEVELS])
+                profiles, profile = get_profile(user_id)
+                xp = profile["xp"]
+                lvl, lvl_name = get_level(xp)
+                send_message(chat_id,
+                    f"📋 *ИНФОРМАЦИЯ*\n\n"
+                    f"*Твой уровень:* {lvl_name} (ур. {lvl})\n"
+                    f"*Твой опыт:* {xp} XP\n\n"
+                    f"*Все уровни:*\n{levels_text}\n\n"
+                    f"*За что XP:*\n🎮 Игра слов: +10/-5\n📖 Игра перевод: +15/-5\n\n"
+                    f"*Команды:* /start, /profile")
+                return
         
-        elif text == "ℹ️ Инфо":
-            levels_text = "\n".join([f"{l['level']}. {l['name']} - {l['xp']} XP" for l in LEVELS])
-            profiles, profile = get_profile(user_id)
-            xp = profile["xp"]
-            lvl, lvl_name = get_level(xp)
-            send_message(chat_id,
-                f"📋 *ИНФОРМАЦИЯ*\n\n"
-                f"*Твой уровень:* {lvl_name} (ур. {lvl})\n"
-                f"*Твой опыт:* {xp} XP\n\n"
-                f"*Все уровни:*\n{levels_text}\n\n"
-                f"*За что XP:*\n🎮 Игра слов: +10/-5\n📖 Игра перевод: +15/-5\n\n"
-                f"*Команды:* /start, /profile")
-        
-        # Обработка ответов пользователя
-        elif user_id in user_state:
+        # Обработка ответов в играх
+        if user_id in user_state:
             mode = user_state[user_id].get("mode")
             
             # ИГРА СЛОВ
@@ -449,7 +478,7 @@ def process_message(chat_id, user_id, text):
                 return
             
             # ОБЫЧНЫЙ РЕЖИМ
-            if mode == "normal":
+            if mode == "normal" and not is_in_game:
                 topic = user_state[user_id].get("current_topic")
                 if topic:
                     keywords = topic.get("kw", [])
@@ -473,7 +502,7 @@ def process_message(chat_id, user_id, text):
                 return
             
             # ПРОСТОЙ РЕЖИМ
-            if mode == "easy":
+            if mode == "easy" and not is_in_game:
                 grammar_errors = check_grammar(text)
                 if grammar_errors:
                     send_message(chat_id, "\n".join(grammar_errors))
@@ -486,7 +515,7 @@ def process_message(chat_id, user_id, text):
                 return
             
             # СЛОЖНЫЙ РЕЖИМ
-            if mode == "hard":
+            if mode == "hard" and not is_in_game:
                 grammar_errors = check_grammar(text)
                 response = f"📝 *{text}*\n\n"
                 if len(text.split()) < 8:
@@ -503,7 +532,8 @@ def process_message(chat_id, user_id, text):
                 send_message(chat_id, f"🔥 *Вопрос {user_state[user_id]['question_count']}:*\n{new_q['q']}\n\n_(перевод: {new_q['ru']})_")
                 return
         
-        else:
+        # Если ничего не подошло
+        if not is_in_game and user_id not in user_state:
             send_message(chat_id, "Нажми /start или выбери режим кнопкой", reply_markup=get_main_keyboard())
     
     except Exception as e:
@@ -529,7 +559,6 @@ def main():
     print("🤖 ENGLISH BOT ЗАПУЩЕН")
     print(f"✅ Слов: {len(all_words)}")
     print(f"✅ Тем: {len(topics)}")
-    print(f"✅ Переводов: {len(translate_sentences)}")
     print("=" * 40)
     
     while True:
